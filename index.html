@@ -1,0 +1,388 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MathAdapt AI</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 30px 16px;
+  font-family: Arial, sans-serif;
+  background: #f4f3ff;
+  color: #292447;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+header h1 { color: #6554d9; }
+
+header p { color: #68677c; }
+
+main {
+  max-width: 760px;
+  margin: auto;
+}
+
+.card {
+  background: white;
+  padding: 24px;
+  border-radius: 18px;
+  margin-bottom: 20px;
+  box-shadow: 0 5px 20px #2924470c;
+}
+
+.levels {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  padding: 13px 12px;
+  background: #eeeaff;
+  color: #5142b8;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button:hover { background: #ded7ff; }
+
+button.active, .primary {
+  background: #6554d9;
+  color: white;
+}
+
+button:focus-visible, input:focus-visible {
+  outline: 3px solid #a69aff;
+  outline-offset: 3px;
+}
+
+.problem {
+  background: #f7f5ff;
+  padding: 20px;
+  border-radius: 12px;
+  margin: 18px 0;
+}
+
+#problem {
+  font-size: 21px;
+  font-weight: bold;
+  line-height: 1.6;
+}
+
+input {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid #d5d0ed;
+  border-radius: 10px;
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.actions button { flex: 1; }
+
+#result, #hint, #solution {
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+#result { font-weight: bold; }
+
+.small {
+  color: #747188;
+  font-size: 14px;
+}
+
+@media (max-width: 500px) {
+  .levels { grid-template-columns: 1fr; }
+  .card { padding: 18px; }
+}
+</style>
+</head>
+
+<body>
+<header>
+  <h1>MathAdapt AI ✨</h1>
+  <p>Learn mathematics at your own level.</p>
+  <p>Learn • Practice • Improve</p>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Choose Your Level</h2>
+    <p class="small">
+      Choose the difficulty that suits you best.
+    </p>
+
+    <div class="levels">
+      <button class="active" onclick="chooseLevel(1)">
+        Level 1<br>Foundation
+      </button>
+      <button onclick="chooseLevel(2)">
+        Level 2<br>Standard
+      </button>
+      <button onclick="chooseLevel(3)">
+        Level 3<br>Advanced
+      </button>
+    </div>
+  </section>
+
+  <section class="card">
+    <p class="small" id="levelLabel">
+      LEVEL 1 — FOUNDATION
+    </p>
+    <h2 id="taskTitle">Let's start with the basics!</h2>
+
+    <div class="problem">
+      <p id="problem">Solve the equation: x² = 9</p>
+    </div>
+
+    <label for="answer"><b>Your answer:</b></label>
+    <input id="answer" type="text"
+      placeholder="Type your answer here">
+
+    <div class="actions">
+      <button class="primary" onclick="checkAnswer()">
+        Check Answer
+      </button>
+      <button onclick="showHint()">Get a Hint</button>
+      <button onclick="showSolution()">Show Solution</button>
+    </div>
+
+    <p id="result" aria-live="polite"></p>
+    <div id="hint"></div>
+    <div id="solution"></div>
+  </section>
+
+  <section class="card">
+    <h2>Learning Goal</h2>
+    <p id="goal">
+      Understand that a quadratic equation can have two roots.
+    </p>
+    <p class="small">
+      MathAdapt AI — Mathematics for Everyone
+    </p>
+  </section>
+</main>
+
+<script>
+
+const levelNames = {
+  1: "Foundation",
+  2: "Standard",
+  3: "Advanced"
+};
+
+const fallbackTasks = {
+  1: {
+    title: "Solve a simple quadratic equation",
+    problem: "Solve: x² = 9",
+    goal: "Learn how to find both solutions.",
+    hint: "Which numbers multiplied by themselves equal 9?",
+    solution: "x² = 9, so x = ±√9. Therefore, x = 3 or x = -3."
+  },
+  2: {
+    title: "Solve a quadratic equation",
+    problem: "Solve: x² - 5x + 6 = 0",
+    goal: "Practice factoring a quadratic expression.",
+    hint: "Find two numbers whose product is 6 and whose sum is 5.",
+    solution: "(x - 2)(x - 3) = 0, so x = 2 or x = 3."
+  },
+  3: {
+    title: "Apply quadratic equations",
+    problem: "A rectangle has an area of 48 m². Its length is 2 m greater than its width. Find its dimensions.",
+    goal: "Translate a real-world situation into an equation.",
+    hint: "Let the width be x. Then the length is x + 2, so x(x + 2) = 48.",
+    solution: "x² + 2x - 48 = 0. Factoring gives (x + 8)(x - 6) = 0. The positive width is 6 m, and the length is 8 m."
+  }
+};
+
+let currentLevel = 1;
+let currentTask = { ...fallbackTasks[1] };
+let aiAvailable = false;
+
+function setText(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
+}
+
+function showSection(id, value) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.textContent = value;
+  element.style.display = "block";
+}
+
+function hideSection(id) {
+  const element = document.getElementById(id);
+  if (element) {
+    element.textContent = "";
+    element.style.display = "none";
+  }
+}
+
+function extractSection(text, name, nextNames) {
+  const next = nextNames.join("|");
+  const regex = new RegExp(
+    "(?:^|\\n)\\s*" + name +
+    "\\s*:\\s*([\\s\\S]*?)(?=\\n\\s*(?:" + next + ")\\s*:|$)",
+    "i"
+  );
+  const match = text.match(regex);
+  return match ? match[1].trim() : "";
+}
+
+async function askAI(action, userAnswer = "") {
+  const response = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      level: levelNames[currentLevel],
+      problem: currentTask.problem,
+      userAnswer,
+      action
+    })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "AI request failed.");
+  }
+
+  return data.text;
+}
+
+async function chooseLevel(level) {
+  currentLevel = level;
+  currentTask = { ...fallbackTasks[level] };
+
+  document.querySelectorAll("[data-level]").forEach(button => {
+    button.classList.toggle(
+      "active",
+      Number(button.dataset.level) === level
+    );
+  });
+
+  setText("levelLabel", levelNames[level]);
+  setText("taskTitle", currentTask.title);
+  setText("problem", currentTask.problem);
+  setText("goal", currentTask.goal);
+
+  const answer = document.getElementById("answer");
+  if (answer) answer.value = "";
+
+  setText("result", "");
+  hideSection("hint");
+  hideSection("solution");
+
+  setText("result", "Generating a new task with AI...");
+
+  try {
+    const text = await askAI("generate");
+
+    const problem = extractSection(text, "PROBLEM", [
+      "HINT", "STEP-BY-STEP SOLUTION", "FINAL ANSWER"
+    ]);
+    const hint = extractSection(text, "HINT", [
+      "STEP-BY-STEP SOLUTION", "FINAL ANSWER"
+    ]);
+    const solution = extractSection(text, "STEP-BY-STEP SOLUTION", [
+      "FINAL ANSWER"
+    ]);
+    const finalAnswer = extractSection(text, "FINAL ANSWER", []);
+
+    if (!problem || !hint || !solution || !finalAnswer) {
+      throw new Error("AI response was incomplete. Please try again.");
+    }
+
+    currentTask = {
+      title: "Your AI-generated challenge",
+      problem,
+      goal: "Solve the problem and explain your reasoning.",
+      hint,
+      solution,
+      finalAnswer
+    };
+
+    aiAvailable = true;
+    setText("taskTitle", currentTask.title);
+    setText("problem", currentTask.problem);
+    setText("goal", currentTask.goal);
+    setText("result", "New AI-generated task ready!");
+  } catch (error) {
+    aiAvailable = false;
+    setText(
+      "result",
+      "AI is not connected yet. Showing the sample task. " + error.message
+    );
+  }
+}
+
+async function checkAnswer() {
+  const answer = document.getElementById("answer");
+  const userAnswer = answer ? answer.value.trim() : "";
+
+  if (!userAnswer) {
+    setText("result", "Please enter your answer first.");
+    return;
+  }
+
+  if (!aiAvailable) {
+    setText(
+      "result",
+      "AI feedback will work after the website is deployed and the API key is configured."
+    );
+    return;
+  }
+
+  setText("result", "AI is checking your answer...");
+
+  try {
+    const feedback = await askAI("feedback", userAnswer);
+    setText("result", feedback);
+  } catch (error) {
+    setText("result", "Could not get AI feedback: " + error.message);
+  }
+}
+
+function showHint() {
+  showSection(
+    "hint",
+    currentTask.hint || "Try breaking the problem into smaller steps."
+  );
+}
+
+function showSolution() {
+  showSection(
+    "solution",
+    currentTask.solution || "A solution is not available yet."
+  );
+}
+
+const answerInput = document.getElementById("answer");
+
+if (answerInput) {
+  answerInput.addEventListener("keydown", event => {
+    if (event.key === "Enter") checkAnswer();
+  });
+}
+</script>
+</body>
+</html>
