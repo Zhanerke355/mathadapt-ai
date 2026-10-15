@@ -9,7 +9,7 @@ export default async function handler(req, res) {
 
   if (!apiKey) {
     return res.status(500).json({
-      error: "GROQ_API_KEY is missing in Vercel Environment Variables."
+      error: "GROQ_API_KEY is missing. Check Vercel Environment Variables."
     });
   }
 
@@ -25,56 +25,57 @@ export default async function handler(req, res) {
 
     if (action === "feedback") {
       prompt = `
-You are MathAdapt AI, a supportive mathematics teacher.
+You are MathAdapt AI, a friendly mathematics teacher.
 
-Check the student's answer to the quadratic equation.
+Check the student's answer.
 
-Problem: ${problem}
+Math problem: ${problem}
 Student's answer: ${userAnswer}
 
 Explain whether the answer is correct.
-If incorrect, explain the mistake and give a helpful hint.
-Do not immediately reveal the full solution.
-Use simple, encouraging English.
-Check the mathematics carefully.
+If it is incorrect, explain the mistake and give a helpful hint.
+Do not immediately reveal the complete solution.
+Use simple English and check the mathematics carefully.
 `;
     } else {
-      let levelName = "Foundation";
+      const levelName =
+        Number(level) === 1
+          ? "Foundation"
+          : Number(level) === 2
+          ? "Standard"
+          : "Advanced";
 
-      if (Number(level) === 2) {
-        levelName = "Standard";
-      } else if (Number(level) === 3) {
-        levelName = "Advanced";
-      }
+      const levelRules =
+        Number(level) === 1
+          ? "Use simple quadratic equations that factorise easily and have integer roots."
+          : Number(level) === 2
+          ? "Use moderately challenging quadratic equations, including factorisation or the quadratic formula."
+          : "Use multi-step quadratic problems that require careful mathematical reasoning.";
 
       prompt = `
 You are MathAdapt AI, a careful mathematics teacher.
 
-Create ONE quadratic equation task.
+Create one original quadratic equation exercise.
 
-Student level: ${levelName}
+Difficulty: ${levelName}
+Requirements: ${levelRules}
 
-Requirements:
-- Foundation: simple factorisation with integer roots.
-- Standard: a moderately challenging quadratic equation.
-- Advanced: a multi-step quadratic equation problem.
-- Ensure the equation and its answer are mathematically correct.
-- Use simple English.
-- Make the task appropriate for the selected level.
+Check the mathematical answer before responding.
+Use simple English and show all important calculation steps.
 
 Return exactly these four sections:
 
 PROBLEM:
-Write the question.
+Write one clear question.
 
 HINT:
-Give one useful hint without revealing the answer.
+Give a helpful hint without revealing the final answer.
 
 STEP-BY-STEP SOLUTION:
-Explain each mathematical step clearly.
+Explain the solution step by step.
 
 FINAL ANSWER:
-Give the correct final answer.
+State the correct final answer.
 `;
     }
 
@@ -94,8 +95,10 @@ Give the correct final answer.
               content: prompt
             }
           ],
+          max_completion_tokens: 2000,
           temperature: 0.2,
-          max_completion_tokens: 2000
+          stream: false,
+          include_reasoning: false
         })
       }
     );
