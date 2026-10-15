@@ -1,7 +1,8 @@
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({
-      error: "Method not allowed",
+      error: "Method not allowed"
     });
   }
 
@@ -9,7 +10,7 @@ export default async function handler(req, res) {
 
   if (!apiKey) {
     return res.status(500).json({
-      error: "GROQ_API_KEY is missing in Vercel Environment Variables.",
+      error: "GROQ_API_KEY is missing in Vercel."
     });
   }
 
@@ -18,46 +19,46 @@ export default async function handler(req, res) {
       level = 1,
       problem = "",
       userAnswer = "",
-      action = "generate",
+      action = "generate"
     } = req.body || {};
 
     let prompt;
 
     if (action === "feedback") {
       prompt = `
-You are a careful mathematics teacher.
-Check the student's answer to a quadratic equation.
-Explain whether it is correct and why.
-If it is incorrect, give a helpful hint without immediately
-revealing the complete solution.
+You are MathAdapt AI, a friendly mathematics teacher.
 
 Problem: ${problem}
-Student's answer: ${userAnswer}
+Student answer: ${userAnswer}
 
-Use simple, encouraging English.
-Check the mathematics carefully.
+Check the answer carefully.
+Explain whether it is correct.
+If it is wrong, give a helpful hint without revealing the full solution.
+Use simple English.
 `;
     } else {
-      const levelName =
-        Number(level) === 1
-          ? "Foundation"
-          : Number(level) === 2
-          ? "Standard"
-          : "Advanced";
+      const levels = {
+        1: "Foundation: simple quadratic equations with integer roots, solved by factorisation.",
+        2: "Standard: moderately challenging quadratic equations using factorisation or the quadratic formula.",
+        3: "Advanced: multi-step quadratic equation problems requiring careful reasoning."
+      };
+
+      const difficulty =
+        levels[Number(level)] || levels[1];
 
       prompt = `
-You are MathAdapt AI, a mathematics teacher.
-Create ONE correct quadratic equation task for a student.
+You are MathAdapt AI, a careful mathematics teacher.
 
-Difficulty: ${levelName}
+Create one original quadratic equation exercise.
 
-Rules:
-- Foundation: simple factorisation, integer roots.
-- Standard: a more challenging quadratic equation.
-- Advanced: a multi-step quadratic equation problem.
-- Verify the answer mathematically.
-- Keep the task appropriate for the chosen level.
+Difficulty:
+${difficulty}
+
+Requirements:
+- Make sure the problem has a mathematically correct solution.
+- Explain the calculations step by step.
 - Use simple English.
+- Give a hint without revealing the final answer.
 
 Return exactly these four sections:
 
@@ -65,10 +66,10 @@ PROBLEM:
 Write the question.
 
 HINT:
-Give one useful hint without revealing the answer.
+Give one helpful hint.
 
 STEP-BY-STEP SOLUTION:
-Show the mathematical steps clearly.
+Explain every important step.
 
 FINAL ANSWER:
 Give the correct answer.
@@ -80,19 +81,20 @@ Give the correct answer.
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: "openai/gpt-oss-20b",
           messages: [
             {
               role: "user",
-              content: prompt,
-            },
+              content: prompt
+            }
           ],
-          temperature: 0.3,
-        }),
+          temperature: 0.2,
+          max_completion_tokens: 2000
+        })
       }
     );
 
@@ -104,25 +106,29 @@ Give the correct answer.
       return res.status(response.status).json({
         error:
           data.error?.message ||
-          "Groq API request failed.",
+          "Groq API request failed."
       });
     }
 
-    const text =
+    const answer =
       data.choices?.[0]?.message?.content;
 
-    if (!text) {
+    if (!answer) {
       return res.status(502).json({
-        error: "Groq returned an empty response.",
+        error: "The AI returned an empty response."
       });
     }
 
-    return res.status(200).json({ text });
+    return res.status(200).json({
+      text: answer
+    });
+
   } catch (error) {
     console.error("MathAdapt API error:", error);
 
     return res.status(500).json({
-      error: error.message || "Internal server error.",
+      error: error.message ||
+        "Internal server error."
     });
   }
 }
