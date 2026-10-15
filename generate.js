@@ -1,89 +1,79 @@
-
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "Only POST requests are allowed."
-    });
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
     return res.status(500).json({
-      error: "API key is not configured on the server."
+      error: "GROQ_API_KEY is missing in Vercel Environment Variables."
     });
-  }
-
-  const { level, problem, userAnswer, action } = req.body || {};
-
-  const levelInstructions = {
-    Foundation:
-      "Use simple numbers, short steps, and very clear hints for a beginner.",
-    Standard:
-      "Use a normal school-level quadratic equation and explain the method.",
-    Advanced:
-      "Use a multi-step or real-world quadratic problem with deeper reasoning."
-  };
-
-  if (!levelInstructions[level]) {
-    return res.status(400).json({
-      error: "Please select a valid difficulty level."
-    });
-  }
-
-  let prompt;
-
-  if (action === "feedback" && problem && userAnswer !== undefined) {
-    prompt = `
-You are MathAdapt AI, a mathematics tutor.
-Topic: quadratic equations.
-Student level: ${level}.
-Level guidance: ${levelInstructions[level]}
-Problem: ${problem}
-Student's answer: ${userAnswer}
-
-Check the answer carefully.
-Give supportive, level-appropriate feedback.
-If incorrect, explain the first mistake and give one useful hint.
-If correct, explain briefly why it is correct.
-Do not claim an answer is correct unless you have checked it.
-Use clear plain text.
-`;
-  } else {
-    prompt = `
-You are MathAdapt AI, a mathematics teacher.
-Topic: quadratic equations.
-Student level: ${level}.
-Level guidance: ${levelInstructions[level]}
-
-Generate ONE new, mathematically correct quadratic-equation task.
-Return these four sections:
-PROBLEM:
-HINT:
-STEP-BY-STEP SOLUTION:
-FINAL ANSWER:
-
-Adapt the numbers, context, and explanation to the chosen level.
-Check the solution by substituting the answer into the original equation.
-Use clear plain text and readable mathematical notation.
-`;
   }
 
   try {
+    const {
+      level = 1,
+      problem = "",
+      userAnswer = "",
+      action = "generate"
+    } = req.body || {};
+
+    let prompt;
+
+    if (action === "feedback") {
+      prompt = `You are a careful mathematics teacher.
+Check the student's answer to this quadratic equation.
+Explain whether it is correct and why. If incorrect, give a helpful hint without revealing the full solution immediately.
+
+Problem: ${problem}
+Student's answer: ${userAnswer}
+
+Use simple, encouraging English. Check the mathematics carefully.`;
+    } else {
+      const levelName =
+        Number(level) === 1 ? "Foundation" :
+        Number(level) === 2 ? "Standard" : "Advanced";
+
+      prompt = `You are MathAdapt AI, a mathematics teacher.
+Create ONE correct quadratic equation task.
+
+Difficulty: ${levelName}
+
+Rules:
+- Foundation: simple factorisation with integer roots.
+- Standard: a more challenging quadratic equation.
+- Advanced: a multi-step quadratic equation problem.
+- Verify the answer mathematically.
+- Use simple English.
+
+Return exactly these four sections:
+
+PROBLEM:
+Write the question.
+
+HINT:
+Give one useful hint without revealing the answer.
+
+STEP-BY-STEP SOLUTION:
+Show the mathematical steps clearly.
+
+FINAL ANSWER:
+Give the correct answer.`;
+    }
+
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+      "https://api.groq.com/openai/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: prompt }]
-            }
-          ]
+          model: "llama-3.3-70b-versatile",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.3
         })
       }
     );
@@ -91,27 +81,26 @@ Use clear plain text and readable mathematical notation.
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Gemini API error:", data);
-      return res.status(502).json({
-        error: "The AI service could not complete the request. Please try again."
+      console.error("Groq API error:", data);
+      return res.status(response.status).json({
+        error: data.error?.message || "Groq API request failed."
       });
     }
 
-    const text = data.candidates?.[0]?.content?.parts
-      ?.map(part => part.text || "")
-      .join("\n");
+    const text = data.choices?.[0]?.message?.content;
 
     if (!text) {
       return res.status(502).json({
-        error: "The AI returned an empty response. Please try again."
+        error: "Groq returned an empty response."
       });
     }
 
     return res.status(200).json({ text });
   } catch (error) {
-    console.error("Server error:", error);
+    console.error("MathAdapt API error:", error);
     return res.status(500).json({
-      error: "Something went wrong. Please try again."
+      error: error.message || "Internal server error."
     });
   }
-};
+}
+
