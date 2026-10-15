@@ -1,31 +1,97 @@
 
 export default async function handler(req, res) {
+  // 1. Allow only POST requests
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Only POST requests are allowed." });
+    return res.status(405).json({
+      error: "Only POST requests are allowed."
+    });
   }
 
+  // 2. Read the API key securely from Vercel
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: "API key is not configured on the server." });
+    console.error("GEMINI_API_KEY is missing.");
+
+    return res.status(500).json({
+      error: "API key is missing. Check Vercel Environment Variables."
+    });
   }
 
+  // 3. Read data sent by the website
   const { level, problem, userAnswer, action } = req.body || {};
 
-  const instructions = {
-    Foundation: "Use simple equations and explain every step for beginners.",
-    Standard: "Use school-level quadratic equations and explain the method.",
-    Advanced: "Use challenging multi-step quadratic problems."
+  // 4. Define difficulty levels
+  const levelInstructions = {
+    Foundation:
+      "Use simple quadratic equations. Explain every step in beginner-friendly language.",
+
+    Standard:
+      "Use school-level quadratic equations. Explain the method and show all important steps.",
+
+    Advanced:
+      "Use challenging multi-step or real-world quadratic problems. Explain the reasoning carefully."
   };
 
-  if (!instructions[level]) {
-    return res.status(400).json({ error: "Invalid difficulty level." });
+  if (!levelInstructions[level]) {
+    return res.status(400).json({
+      error: "Invalid difficulty level."
+    });
   }
 
-  const prompt = action === "feedback"
-    ? `You are a kind mathematics tutor. Difficulty: ${level}. Question: ${problem}. Student answer: ${userAnswer}. Check the answer, explain any mistake, and give a helpful next step.`
-    : `You are MathAdapt AI, a mathematics teacher. Create a quadratic equation task for ${level}. ${instructions[level]} Verify the mathematics. Respond with these headings: PROBLEM:, HINT:, STEP-BY-STEP SOLUTION:, FINAL ANSWER:.`;
+  // 5. Create the AI prompt
+  let prompt;
 
+  if (action === "feedback") {
+    if (!problem || userAnswer === undefined) {
+      return res.status(400).json({
+        error: "A problem and student answer are required."
+      });
+    }
+
+    prompt = `
+You are MathAdapt AI, a supportive mathematics tutor.
+
+Difficulty level: ${level}
+Question: ${problem}
+Student's answer: ${userAnswer}
+
+Check the student's answer carefully.
+Explain whether it is correct or incorrect.
+If incorrect, explain the mistake kindly and give a useful next step.
+If correct, explain briefly why it is correct.
+Do not reveal the full solution immediately when the answer is incorrect.
+Use clear, simple language.
+`;
+  } else {
+    prompt = `
+You are MathAdapt AI, a mathematics teacher.
+
+Create ONE quadratic equation task for the following level:
+${level}
+
+Requirements:
+${levelInstructions[level]}
+
+Check the mathematical solution before responding.
+Make sure the final answer is correct.
+Use these exact headings:
+
+PROBLEM:
+Write the question.
+
+HINT:
+Give a helpful hint without immediately revealing the answer.
+
+STEP-BY-STEP SOLUTION:
+Explain the solution step by step.
+
+FINAL ANSWER:
+State the correct final answer.
+`;
+  }
+
+  // 6. Send the request to Google Gemini
   try {
     const response = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
@@ -36,30 +102,65 @@ export default async function handler(req, res) {
           "x-goog-api-key": apiKey
         },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.4,
+            maxOutputTokens: 2048
+          }
         })
       }
     );
 
     const data = await response.json();
 
+    // 7. Handle errors returned by Google
     if (!response.ok) {
-      console.error("Gemini error:", data);
-      return res.status(502).json({ error: "AI service request failed. Please try again." });
+      console.error(
+        "Gemini API error:",
+        response.status,
+        JSON.stringify(data)
+      );
+
+      return res.status(502).json({
+        error:
+          data.error?.message ||
+          "The AI service request failed. Check the API key and model access."
+      });
     }
 
-    const text = data.candidates?.[0]?.content?.parts
-      ?.map(part => part.text || "")
-      .join("\n");
+    // 8. Extract the generated text
+    const generatedText = data.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text || "")
+      .join("\n")
+      .trim();
 
-    if (!text) {
-      return res.status(502).json({ error: "AI returned an empty response." });
+    if (!generatedText) {
+      console.error(
+        "Gemini returned no text:",
+        JSON.stringify(data)
+      );
+
+      return res.status(502).json({
+        error: "The AI returned an empty response. Please try again."
+      });
     }
 
-    return res.status(200).json({ text });
+    // 9. Send the answer back to the website
+    return res.status(200).json({
+      text: generatedText
+    });
+
   } catch (error) {
     console.error("Server error:", error);
-    return res.status(500).json({ error: "Something went wrong. Please try again." });
+
+    return res.status(500).json({
+      error: "The server could not connect to the AI service."
+    });
   }
 }
 
