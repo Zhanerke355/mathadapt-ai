@@ -1,6 +1,8 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({
+      error: "Method not allowed"
+    });
   }
 
   const apiKey = process.env.GROQ_API_KEY;
@@ -22,30 +24,43 @@ export default async function handler(req, res) {
     let prompt;
 
     if (action === "feedback") {
-      prompt = `You are a careful mathematics teacher.
-Check the student's answer to this quadratic equation.
-Explain whether it is correct and why. If incorrect, give a helpful hint without revealing the full solution immediately.
+      prompt = `
+You are MathAdapt AI, a supportive mathematics teacher.
+
+Check the student's answer to the quadratic equation.
 
 Problem: ${problem}
 Student's answer: ${userAnswer}
 
-Use simple, encouraging English. Check the mathematics carefully.`;
+Explain whether the answer is correct.
+If incorrect, explain the mistake and give a helpful hint.
+Do not immediately reveal the full solution.
+Use simple, encouraging English.
+Check the mathematics carefully.
+`;
     } else {
-      const levelName =
-        Number(level) === 1 ? "Foundation" :
-        Number(level) === 2 ? "Standard" : "Advanced";
+      let levelName = "Foundation";
 
-      prompt = `You are MathAdapt AI, a mathematics teacher.
-Create ONE correct quadratic equation task.
+      if (Number(level) === 2) {
+        levelName = "Standard";
+      } else if (Number(level) === 3) {
+        levelName = "Advanced";
+      }
 
-Difficulty: ${levelName}
+      prompt = `
+You are MathAdapt AI, a careful mathematics teacher.
 
-Rules:
+Create ONE quadratic equation task.
+
+Student level: ${levelName}
+
+Requirements:
 - Foundation: simple factorisation with integer roots.
-- Standard: a more challenging quadratic equation.
+- Standard: a moderately challenging quadratic equation.
 - Advanced: a multi-step quadratic equation problem.
-- Verify the answer mathematically.
+- Ensure the equation and its answer are mathematically correct.
 - Use simple English.
+- Make the task appropriate for the selected level.
 
 Return exactly these four sections:
 
@@ -56,10 +71,11 @@ HINT:
 Give one useful hint without revealing the answer.
 
 STEP-BY-STEP SOLUTION:
-Show the mathematical steps clearly.
+Explain each mathematical step clearly.
 
 FINAL ANSWER:
-Give the correct answer.`;
+Give the correct final answer.
+`;
     }
 
     const response = await fetch(
@@ -67,13 +83,19 @@ Give the correct answer.`;
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.3
+          model: "openai/gpt-oss-20b",
+          messages: [
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
+          temperature: 0.2,
+          max_completion_tokens: 2000
         })
       }
     );
@@ -82,22 +104,30 @@ Give the correct answer.`;
 
     if (!response.ok) {
       console.error("Groq API error:", data);
+
       return res.status(response.status).json({
-        error: data.error?.message || "Groq API request failed."
+        error:
+          data.error?.message ||
+          "The Groq API request failed."
       });
     }
 
-    const text = data.choices?.[0]?.message?.content;
+    const generatedText =
+      data.choices?.[0]?.message?.content;
 
-    if (!text) {
+    if (!generatedText) {
       return res.status(502).json({
-        error: "Groq returned an empty response."
+        error: "The AI returned an empty response."
       });
     }
 
-    return res.status(200).json({ text });
+    return res.status(200).json({
+      text: generatedText
+    });
+
   } catch (error) {
-    console.error("MathAdapt API error:", error);
+    console.error("MathAdapt AI error:", error);
+
     return res.status(500).json({
       error: error.message || "Internal server error."
     });
