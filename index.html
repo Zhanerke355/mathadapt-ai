@@ -183,68 +183,37 @@ input {
 
 <script>
 
+let currentLevel = 1;
+let currentTask = {
+  problem: "Solve x² - 5x + 6 = 0",
+  hint: "Find two numbers whose product is 6 and whose sum is 5.",
+  solution: "x² - 5x + 6 = 0\n(x - 2)(x - 3) = 0\nx - 2 = 0 or x - 3 = 0\nx = 2 or x = 3",
+  answer: "x = 2, 3"
+};
+
+let aiAvailable = false;
+let requestNumber = 0;
+
 const levelNames = {
   1: "Foundation",
   2: "Standard",
   3: "Advanced"
 };
 
-const fallbackTasks = {
-  1: {
-    title: "Solve a simple quadratic equation",
-    problem: "Solve: x² = 9",
-    goal: "Learn how to find both solutions.",
-    hint: "Which numbers multiplied by themselves equal 9?",
-    solution: "x² = 9, so x = ±√9. Therefore, x = 3 or x = -3."
-  },
-  2: {
-    title: "Solve a quadratic equation",
-    problem: "Solve: x² - 5x + 6 = 0",
-    goal: "Practice factoring a quadratic expression.",
-    hint: "Find two numbers whose product is 6 and whose sum is 5.",
-    solution: "(x - 2)(x - 3) = 0, so x = 2 or x = 3."
-  },
-  3: {
-    title: "Apply quadratic equations",
-    problem: "A rectangle has an area of 48 m². Its length is 2 m greater than its width. Find its dimensions.",
-    goal: "Translate a real-world situation into an equation.",
-    hint: "Let the width be x. Then the length is x + 2, so x(x + 2) = 48.",
-    solution: "x² + 2x - 48 = 0. Factoring gives (x + 8)(x - 6) = 0. The positive width is 6 m, and the length is 8 m."
-  }
-};
+function extractSection(text, title, nextTitles = []) {
+  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const nextPattern = nextTitles.length
+    ? nextTitles.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+    : null;
 
-let currentLevel = 1;
-let currentTask = { ...fallbackTasks[1] };
-let aiAvailable = false;
+  const pattern = nextPattern
+    ? new RegExp(
+        "(?:^|\\n)\\s*" + escapedTitle + "\\s*:?\\s*([\\s\\S]*?)(?=\\n\\s*(?:" + nextPattern + ")\\s*:?|$)",
+        "i"
+      )
+    : new RegExp("(?:^|\\n)\\s*" + escapedTitle + "\\s*:?\\s*([\\s\\S]*)$", "i");
 
-function setText(id, value) {
-  const element = document.getElementById(id);
-  if (element) element.textContent = value;
-}
-
-function showSection(id, value) {
-  const element = document.getElementById(id);
-  if (!element) return;
-  element.textContent = value;
-  element.style.display = "block";
-}
-
-function hideSection(id) {
-  const element = document.getElementById(id);
-  if (element) {
-    element.textContent = "";
-    element.style.display = "none";
-  }
-}
-
-function extractSection(text, name, nextNames) {
-  const next = nextNames.join("|");
-  const regex = new RegExp(
-    "(?:^|\\n)\\s*" + name +
-    "\\s*:\\s*([\\s\\S]*?)(?=\\n\\s*(?:" + next + ")\\s*:|$)",
-    "i"
-  );
-  const match = text.match(regex);
+  const match = text.match(pattern);
   return match ? match[1].trim() : "";
 }
 
@@ -253,136 +222,167 @@ async function askAI(action, userAnswer = "") {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      level: levelNames[currentLevel],
+      level: currentLevel,
       problem: currentTask.problem,
       userAnswer,
       action
     })
   });
 
-  const data = await response.json();
-
   if (!response.ok) {
-    throw new Error(data.error || "AI request failed.");
+    throw new Error("AI request failed: " + response.status);
   }
 
-  return data.text;
+  const data = await response.json();
+  return data;
 }
 
 async function chooseLevel(level) {
-  currentLevel = level;
-  currentTask = { ...fallbackTasks[level] };
+  currentLevel = Number(level);
+  const thisRequest = ++requestNumber;
 
   document.querySelectorAll("[data-level]").forEach(button => {
     button.classList.toggle(
       "active",
-      Number(button.dataset.level) === level
+      Number(button.dataset.level) === currentLevel
     );
   });
 
-  setText("levelLabel", levelNames[level]);
-  setText("taskTitle", currentTask.title);
-  setText("problem", currentTask.problem);
-  setText("goal", currentTask.goal);
+  aiAvailable = false;
 
-  const answer = document.getElementById("answer");
-  if (answer) answer.value = "";
-
-  setText("result", "");
-  hideSection("hint");
-  hideSection("solution");
-
-  setText("result", "Generating a new task with AI...");
+  const problemElement = document.getElementById("problem");
+  if (problemElement) problemElement.textContent = "Generating a new task...";
 
   try {
-    const text = await askAI("generate");
+    const data = await askAI("generate");
+    if (thisRequest !== requestNumber) return;
+
+    const text = data.result || data.response || data.content || data.message || "";
+
+    if (!text) {
+      throw new Error("The AI response was empty.");
+    }
 
     const problem = extractSection(text, "PROBLEM", [
-      "HINT", "STEP-BY-STEP SOLUTION", "FINAL ANSWER"
-    ]);
-    const hint = extractSection(text, "HINT", [
-      "STEP-BY-STEP SOLUTION", "FINAL ANSWER"
-    ]);
-    const solution = extractSection(text, "STEP-BY-STEP SOLUTION", [
+      "HINT",
+      "STEP-BY-STEP SOLUTION",
+      "SOLUTION",
       "FINAL ANSWER"
     ]);
-    const finalAnswer = extractSection(text, "FINAL ANSWER", []);
 
-    if (!problem || !hint || !solution || !finalAnswer) {
-      throw new Error("AI response was incomplete. Please try again.");
+    const hint = extractSection(text, "HINT", [
+      "STEP-BY-STEP SOLUTION",
+      "SOLUTION",
+      "FINAL ANSWER"
+    ]);
+
+    const solution =
+      extractSection(text, "STEP-BY-STEP SOLUTION", ["FINAL ANSWER"]) ||
+      extractSection(text, "SOLUTION", ["FINAL ANSWER"]);
+
+    const answer = extractSection(text, "FINAL ANSWER");
+
+    if (!problem || !solution) {
+      throw new Error("Could not read the problem or solution from the AI response.");
     }
 
     currentTask = {
-      title: "Your AI-generated challenge",
       problem,
-      goal: "Solve the problem and explain your reasoning.",
-      hint,
+      hint: hint || "Try factoring the quadratic equation.",
       solution,
-      finalAnswer
+      answer: answer || "Check the solutions shown above."
     };
 
     aiAvailable = true;
-    setText("taskTitle", currentTask.title);
-    setText("problem", currentTask.problem);
-    setText("goal", currentTask.goal);
-    setText("result", "New AI-generated task ready!");
+    displayProblem();
   } catch (error) {
-    aiAvailable = false;
-    setText(
-      "result",
-      "AI is not connected yet. Showing the sample task. " + error.message
-    );
+    if (thisRequest !== requestNumber) return;
+
+    if (problemElement) {
+      problemElement.textContent =
+        "Could not generate a new task. Please try again.";
+    }
+    console.error(error);
   }
 }
 
+function displayProblem() {
+  const problemElement = document.getElementById("problem");
+  if (problemElement) {
+    problemElement.textContent = currentTask.problem;
+  }
+
+  const hintElement = document.getElementById("hint");
+  if (hintElement) {
+    hintElement.textContent = "";
+    hintElement.style.display = "none";
+  }
+
+  const solutionElement = document.getElementById("solution");
+  if (solutionElement) {
+    solutionElement.textContent = "";
+    solutionElement.style.display = "none";
+  }
+
+  const feedbackElement = document.getElementById("feedback");
+  if (feedbackElement) feedbackElement.textContent = "";
+
+  const answerInput = document.getElementById("answer");
+  if (answerInput) answerInput.value = "";
+}
+
+function showHint() {
+  const hintElement = document.getElementById("hint");
+  if (!hintElement) return;
+
+  hintElement.textContent = currentTask.hint;
+  hintElement.style.display = "block";
+}
+
+function showSolution() {
+  // Show the solution for the CURRENT task.
+  // Do not call the AI or generate a new task here.
+  const solutionElement = document.getElementById("solution");
+  if (!solutionElement) return;
+
+  solutionElement.textContent =
+    currentTask.solution + "\n\nFinal Answer: " + currentTask.answer;
+  solutionElement.style.display = "block";
+}
+
 async function checkAnswer() {
-  const answer = document.getElementById("answer");
-  const userAnswer = answer ? answer.value.trim() : "";
+  const answerInput = document.getElementById("answer");
+  const feedbackElement = document.getElementById("feedback");
+
+  if (!answerInput || !feedbackElement) return;
+
+  const userAnswer = answerInput.value.trim();
 
   if (!userAnswer) {
-    setText("result", "Please enter your answer first.");
+    feedbackElement.textContent = "Please enter your answer first.";
     return;
   }
 
   if (!aiAvailable) {
-    setText(
-      "result",
-      "AI feedback will work after the website is deployed and the API key is configured."
-    );
+    feedbackElement.textContent =
+      "Please generate a task first by choosing a level.";
     return;
   }
 
-  setText("result", "AI is checking your answer...");
+  feedbackElement.textContent = "Checking your answer...";
 
   try {
-    const feedback = await askAI("feedback", userAnswer);
-    setText("result", feedback);
+    const data = await askAI("feedback", userAnswer);
+    feedbackElement.textContent =
+      data.result || data.response || data.content || data.message ||
+      "Your answer has been checked.";
   } catch (error) {
-    setText("result", "Could not get AI feedback: " + error.message);
+    feedbackElement.textContent =
+      "Could not check the answer. Please try again.";
+    console.error(error);
   }
 }
 
-function showHint() {
-  showSection(
-    "hint",
-    currentTask.hint || "Try breaking the problem into smaller steps."
-  );
-}
-
-function showSolution() {
-  showSection(
-    "solution",
-    currentTask.solution || "A solution is not available yet."
-  );
-}
-
-const answerInput = document.getElementById("answer");
-
-if (answerInput) {
-  answerInput.addEventListener("keydown", event => {
-    if (event.key === "Enter") checkAnswer();
-  });
-}
 </script>
 </body>
 </html>
